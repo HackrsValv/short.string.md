@@ -50,3 +50,68 @@ Open questions for the user:
 - **URL stats** — lightweight local-only tracking of how many times you've used/shared each alias
 - **Import/export** — backup your aliases and keypair
 - **Companion mode** — extension as a thin wrapper that opens the short.string.md page in a popup window, minimal code
+- **Consent-first swarming** — explicit opt-in prompt before enabling background P2P, clear explanation of what it does, easy off-switch
+- **Site code reuse via iframe/offscreen doc** — load short.string.md in an offscreen document or iframe, message-pass to it rather than bundling compression/Nostr code
+- **Offscreen document for swarm** — Chrome's Offscreen API lets a service worker spin up an invisible page that can hold WebRTC connections
+
+## Clusters
+
+### One-Click Shortening (core UX)
+The primary value — make it trivially easy to shorten any URL from the browser.
+- Context menu "Shorten this URL"
+- Toolbar popup with one-click shorten
+- Keyboard shortcut (Ctrl+Shift+S)
+- Omnibox integration (`s ` prefix)
+- Custom alias UI in popup
+- Auto-shorten on copy
+- Offline compression only mode (fallback)
+
+### Background Swarm Participation
+The differentiator — extension users become always-on peers in the resolution network, even without a tab open.
+- Background swarm worker (service worker + offscreen document)
+- Consent-first swarming (explicit opt-in, clear explanation, easy off)
+- Swarm toggle in popup with green dot indicator
+- Badge counter showing connected peers
+- Relay health indicator
+- Alias cache sync (extension storage as resolution layer)
+- Notification on resolution (your cache helped someone)
+
+### Code Reuse & Architecture
+Minimize duplication — the site already has all the logic.
+- Site code reuse via offscreen document loading short.string.md
+- Content script injection to sync state when on the site
+- Cross-browser manifest (MV3 Chrome, MV2/3 Zen/Firefox)
+- Companion mode (popup = mini site)
+
+### History & Management
+Track what you've created, manage your identity.
+- History/dashboard of shortened URLs
+- Nostr keypair management (generate or import)
+- Import/export aliases and keypair
+- URL stats (local-only usage tracking)
+
+### Extras & Integrations
+Nice-to-haves that expand reach.
+- QR code generation
+- Link preview on hover for short.string.md URLs
+- Batch shorten (select multiple links)
+- String.md integration (detect content docs)
+- Share menu integration
+
+## Standouts
+
+1. **Context menu + toolbar popup + keyboard shortcut** — The table-stakes trio. Right-click to shorten a link, click the icon to shorten current page, keyboard shortcut for power users. Without this the extension has no reason to exist.
+
+2. **Offscreen document reuse** — Instead of bundling LZ-String, nostr-tools, and Trystero separately, load the actual short.string.md page in a Chrome offscreen document (or hidden iframe for Firefox). Message-pass shorten/resolve requests to it. This means: zero code duplication, automatic feature parity as the site evolves, and the offscreen doc can also hold WebRTC swarm connections.
+
+3. **Consent-first background swarming** — On first install or first toggle, explain clearly: "This keeps a background connection to help other users resolve short URLs. Uses minimal bandwidth. You can turn it off anytime." The offscreen document holds the Trystero connections. Badge counter shows peer count so the user sees it's alive.
+
+4. **Alias cache in extension storage** — Every alias the user creates or resolves gets cached in `chrome.storage.local`. This cache participates in the resolution waterfall. Even without swarming enabled, the extension improves resolution speed for the user's own aliases.
+
+## Next Steps
+
+What to do with the standouts:
+- Create a spec for the extension architecture (offscreen document approach, message-passing API, manifest structure)
+- Decision file: MV3-only vs MV2+MV3 for Zen/Firefox compatibility
+- Decision file: how the offscreen document communicates with the site code (postMessage protocol)
+- Prototype: minimal popup + context menu + offscreen doc loading short.string.md
