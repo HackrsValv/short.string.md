@@ -116,6 +116,7 @@ shortenBtn.addEventListener('click', async () => {
 function showResult(url, mode) {
   resultLabel.textContent = mode === 'alias' ? 'Alias' : 'Compressed';
   resultUrl.textContent = url;
+  resultUrl.href = url;
   resultError.textContent = '';
   resultError.style.display = 'none';
   resultEl.classList.add('visible');
@@ -138,10 +139,7 @@ copyBtn.addEventListener('click', () => {
   navigator.clipboard.writeText(text).then(() => showToast('Copied!'), () => showToast('Copy failed'));
 });
 
-resultUrl.addEventListener('click', () => {
-  const text = resultUrl.textContent;
-  if (text) navigator.clipboard.writeText(text).then(() => showToast('Copied!'), () => showToast('Copy failed'));
-});
+// Link click opens the URL in a new tab (handled by <a target="_blank">)
 
 // ── Swarm toggle ──
 

@@ -142,14 +142,20 @@
       color: var(--text-dim);
       margin-bottom: 4px;
     }
+    .result-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+    }
     .result-url {
+      flex: 1;
       font-size: 12px;
       color: var(--accent);
       word-break: break-all;
-      cursor: pointer;
+      text-decoration: none;
     }
     .result-url:hover { text-decoration: underline; }
-    .result-actions { margin-top: 6px; }
+    .result-actions { flex-shrink: 0; }
     .btn-copy {
       background: transparent;
       color: var(--text);
@@ -323,11 +329,13 @@
 
     <div class="result" id="result">
       <div class="result-label" id="result-label">Shortened</div>
-      <div class="result-url" id="result-url"></div>
-      <div class="result-error" id="result-error"></div>
-      <div class="result-actions">
-        <button class="btn-copy" id="copy-btn">Copy</button>
+      <div class="result-row">
+        <a class="result-url" id="result-url" href="#" target="_blank" rel="noopener"></a>
+        <div class="result-actions">
+          <button class="btn-copy" id="copy-btn">Copy</button>
+        </div>
       </div>
+      <div class="result-error" id="result-error"></div>
     </div>
 
     <div class="divider"></div>
