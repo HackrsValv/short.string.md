@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --panel-bg: #161b22;
+      --border:   #30363d;
+      --accent:   #58a6ff;
+      --text:     #e6edf3;
+      --text-dim: #8b949e;
+      --green:    #3fb950;
+      --red:      #f85149;
+    }
+
+    body {
+      width: 360px;
+      min-height: 200px;
+      max-height: 560px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      overflow-y: auto;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--panel-bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .header .logo {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .header .swarm-indicator {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .header .swarm-indicator.active { color: var(--green); }
+
+    /* Main */
+    .main { padding: 12px; }
+
+    /* URL input */
+    .url-display {
+      width: 100%;
+      background: var(--panel-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-family: inherit;
+      resize: none;
+      outline: none;
+      min-height: 36px;
+      word-break: break-all;
+    }
+    .url-display:focus { border-color: var(--accent); }
+
+    /* Mode toggle */
+    .mode-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .mode-btn {
+      flex: 1;
+      background: var(--panel-bg);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+    }
+    .mode-btn:hover { border-color: var(--accent); color: var(--text); }
+    .mode-btn.selected { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.1); }
+
+    /* Alias input */
+    .alias-row {
+      display: none;
+      margin-top: 8px;
+    }
+    .alias-row.visible { display: flex; gap: 6px; }
+    .alias-row input {
+      flex: 1;
+      background: var(--panel-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+    .alias-row input:focus { border-color: var(--accent); }
+    .alias-row input::placeholder { color: var(--text-dim); }
+
+    /* Shorten button */
+    .shorten-row { margin-top: 10px; text-align: right; }
+    .btn-primary {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      padding: 7px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary:hover { background: #79c0ff; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Result */
+    .result {
+      display: none;
+      margin-top: 12px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .result.visible { display: block; }
+    .result-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+    .result-url {
+      font-size: 12px;
+      color: var(--accent);
+      word-break: break-all;
+      cursor: pointer;
+    }
+    .result-url:hover { text-decoration: underline; }
+    .result-actions { margin-top: 6px; }
+    .btn-copy {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .btn-copy:hover { border-color: var(--accent); }
+    .result-error { color: var(--red); font-size: 12px; margin-top: 4px; }
+
+    /* Divider */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 12px 0;
+    }
+
+    /* Swarm section */
+    .swarm-section { margin-top: 4px; }
+    .swarm-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .swarm-label { font-size: 12px; color: var(--text-dim); }
+    .swarm-toggle {
+      position: relative;
+      width: 34px;
+      height: 18px;
+      margin-left: auto;
+    }
+    .swarm-toggle input { display: none; }
+    .swarm-toggle .slider {
+      position: absolute;
+      inset: 0;
+      background: var(--border);
+      border-radius: 9px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .swarm-toggle .slider::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      background: var(--text);
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .swarm-toggle input:checked + .slider { background: var(--green); }
+    .swarm-toggle input:checked + .slider::after { transform: translateX(16px); }
+    .swarm-peers { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+    /* Consent dialog */
+    .consent-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .consent-overlay.visible { display: flex; }
+    .consent-box {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      max-width: 300px;
+    }
+    .consent-box h3 { font-size: 14px; margin-bottom: 8px; }
+    .consent-box p { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-bottom: 12px; }
+    .consent-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .btn-cancel {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* History */
+    .history-section { margin-top: 4px; }
+    .history-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+    .history-list {
+      max-height: 160px;
+      overflow-y: auto;
+    }
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-item:hover { background: rgba(255,255,255,0.03); }
+    .history-short {
+      font-size: 11px;
+      color: var(--accent);
+      word-break: break-all;
+      flex: 1;
+    }
+    .history-mode {
+      font-size: 10px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .history-empty {
+      font-size: 12px;
+      color: var(--text-dim);
+      font-style: italic;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--panel-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 11px;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 200;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="logo">short.string.md</span>
+    <span class="swarm-indicator" id="swarm-indicator"></span>
+  </div>
+
+  <div class="main">
+    <textarea class="url-display" id="url-input" rows="2" placeholder="Paste a URL..."></textarea>
+
+    <div class="mode-row">
+      <button class="mode-btn selected" id="mode-compress">Compressed</button>
+      <button class="mode-btn" id="mode-alias">Alias</button>
+    </div>
+
+    <div class="alias-row" id="alias-row">
+      <input type="text" id="alias-input" placeholder="custom-name (or blank for random)" />
+    </div>
+
+    <div class="shorten-row">
+      <button class="btn-primary" id="shorten-btn" disabled>Shorten</button>
+    </div>
+
+    <div class="result" id="result">
+      <div class="result-label" id="result-label">Shortened</div>
+      <div class="result-url" id="result-url"></div>
+      <div class="result-error" id="result-error"></div>
+      <div class="result-actions">
+        <button class="btn-copy" id="copy-btn">Copy</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="swarm-section">
+      <div class="swarm-row">
+        <span class="swarm-label">P2P Swarming</span>
+        <label class="swarm-toggle">
+          <input type="checkbox" id="swarm-toggle" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="swarm-peers" id="swarm-peers"></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="history-section">
+      <div class="history-title">History</div>
+      <div class="history-list" id="history-list">
+        <div class="history-empty">No shortened URLs yet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Consent dialog -->
+  <div class="consent-overlay" id="consent-overlay">
+    <div class="consent-box">
+      <h3>Enable P2P Swarming?</h3>
+      <p>
+        When enabled, this extension maintains background connections to help other users
+        resolve short URLs. It uses minimal bandwidth and no personal data is shared.
+        You can turn it off anytime.
+      </p>
+      <div class="consent-actions">
+        <button class="btn-cancel" id="consent-cancel">Cancel</button>
+        <button class="btn-primary" id="consent-enable">Enable</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
