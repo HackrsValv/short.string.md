@@ -66,7 +66,7 @@ const STORAGE_KEY_SK = 'short_stringmd_sk';
 // ── Key management (using extension storage.local instead of localStorage) ──
 
 const _api = typeof browser !== 'undefined' ? browser : chrome;
-const { generateSecretKey, getPublicKey, finalizeEvent } = NostrTools;
+const { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } = NostrTools;
 
 async function getOrCreateSecretKey() {
   const data = await _api.storage.local.get(STORAGE_KEY_SK);
@@ -129,6 +129,10 @@ function queryRelays(alias) {
           try {
             const data = JSON.parse(msg.data);
             if (data[0] === 'EVENT' && data[2] && data[2].content && !resolved) {
+              // T2.2/T2.5: Verify event signature before trusting relay response
+              try {
+                if (!verifyEvent(data[2])) break;
+              } catch { break; }
               resolved = true;
               clearTimeout(timer);
               sockets.forEach(s => { try { s.close(); } catch {} });
