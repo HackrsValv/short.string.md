@@ -1,58 +1,86 @@
-// Service worker — routes messages, manages offscreen document, context menu
+// Background page — manages iframe bridge, context menu, message routing, badge
+// Firefox/Zen: persistent background page with DOM access (no offscreen API needed)
 
-const OFFSCREEN_URL = 'offscreen.html';
+const api = typeof browser !== 'undefined' ? browser : chrome;
 
-// ── Offscreen document lifecycle ──
+// ── Iframe bridge (same logic as former offscreen.js) ──
 
-let creatingOffscreen = null;
+const iframe = document.getElementById('site');
+const SITE_ORIGIN = 'https://short.string.md';
+let messageId = 0;
+const pending = {};
 
-async function ensureOffscreen() {
-  const contexts = await chrome.runtime.getContexts({
-    contextTypes: ['OFFSCREEN_DOCUMENT'],
+let iframeReady = false;
+const readyPromise = new Promise((resolve) => {
+  iframe.addEventListener('load', () => {
+    iframeReady = true;
+    resolve();
   });
-  if (contexts.length > 0) return;
+  setTimeout(() => {
+    if (!iframeReady) resolve();
+  }, 10000);
+});
 
-  if (creatingOffscreen) {
-    await creatingOffscreen;
-    return;
+window.addEventListener('message', (event) => {
+  if (event.source !== iframe.contentWindow) return;
+  const data = event.data;
+  if (!data || !data._extReply) return;
+
+  const id = data._id;
+  if (id != null && pending[id]) {
+    pending[id](data);
+    delete pending[id];
+  }
+});
+
+async function sendToSite(msg) {
+  await readyPromise;
+
+  if (!iframeReady) {
+    return { error: 'Site iframe failed to load' };
   }
 
-  creatingOffscreen = chrome.offscreen.createDocument({
-    url: OFFSCREEN_URL,
-    reasons: ['IFRAME_SCRIPTING'],
-    justification: 'Load short.string.md for URL shortening and P2P swarming',
+  const id = ++messageId;
+  const timeout = msg.type === 'shorten' && msg.mode === 'alias' ? 15000 : 8000;
+
+  const promise = new Promise((resolve) => {
+    pending[id] = resolve;
+    setTimeout(() => {
+      if (pending[id]) {
+        delete pending[id];
+        resolve({ error: 'Timeout waiting for site response' });
+      }
+    }, timeout);
   });
 
-  await creatingOffscreen;
-  creatingOffscreen = null;
+  iframe.contentWindow.postMessage(
+    { ...msg, _ext: true, _id: id },
+    SITE_ORIGIN
+  );
+
+  return promise;
 }
 
 // ── Context menu ──
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
+api.runtime.onInstalled.addListener(() => {
+  api.contextMenus.create({
     id: 'shorten-link',
     title: 'Shorten with short.string.md',
     contexts: ['link', 'page'],
   });
 });
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+api.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'shorten-link') return;
 
   const url = info.linkUrl || info.pageUrl;
   if (!url) return;
 
-  await ensureOffscreen();
-  const result = await chrome.runtime.sendMessage({
-    type: 'shorten',
-    url,
-    mode: 'compress',
-  });
+  const result = await sendToSite({ type: 'shorten', url, mode: 'compress' });
 
-  // Store result and open popup can't be done directly from context menu,
-  // so store in session storage for the popup to pick up
-  await chrome.storage.session.set({
+  // Store result for popup to pick up
+  await api.storage.local.set({
     pendingResult: {
       url,
       result: result.result || null,
@@ -61,22 +89,15 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       created: Date.now(),
     },
   });
-
-  // Open the popup by triggering the action
-  // Note: chrome.action.openPopup() requires user gesture, so we store the result
-  // and it will show next time the popup opens
 });
 
-// ── Message routing (popup → offscreen) ──
+// ── Message routing (popup → site iframe) ──
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg._fromPopup) return;
 
   (async () => {
-    await ensureOffscreen();
-
-    // Forward to offscreen document
-    const result = await chrome.runtime.sendMessage({
+    const result = await sendToSite({
       type: msg.type,
       url: msg.url,
       mode: msg.mode,
@@ -86,16 +107,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     // Save to history if successful shorten
     if (msg.type === 'shorten' && result.result && !result.error) {
-      const { history = [] } = await chrome.storage.local.get('history');
+      const data = await api.storage.local.get('history');
+      const history = data.history || [];
       history.unshift({
         url: msg.url,
         short: result.result,
         mode: msg.mode || 'compress',
         created: Date.now(),
       });
-      // Cap at 500 entries
       if (history.length > 500) history.length = 500;
-      await chrome.storage.local.set({ history });
+      await api.storage.local.set({ history });
     }
 
     sendResponse(result);
@@ -107,28 +128,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // ── Badge updates ──
 
 async function updateBadge() {
-  const { swarm_enabled = false } = await chrome.storage.local.get('swarm_enabled');
-  if (!swarm_enabled) {
-    chrome.action.setBadgeText({ text: '' });
+  const data = await api.storage.local.get('swarm_enabled');
+  const swarmEnabled = data.swarm_enabled || false;
+
+  if (!swarmEnabled) {
+    api.browserAction.setBadgeText({ text: '' });
     return;
   }
 
   try {
-    await ensureOffscreen();
-    const status = await chrome.runtime.sendMessage({ type: 'swarm-status' });
+    const status = await sendToSite({ type: 'swarm-status' });
     if (status && typeof status.peers === 'number') {
-      chrome.action.setBadgeText({ text: status.peers > 0 ? String(status.peers) : '' });
-      chrome.action.setBadgeBackgroundColor({ color: status.peers > 0 ? '#3fb950' : '#8b949e' });
+      api.browserAction.setBadgeText({ text: status.peers > 0 ? String(status.peers) : '' });
+      api.browserAction.setBadgeBackgroundColor({ color: status.peers > 0 ? '#3fb950' : '#8b949e' });
     }
   } catch {
-    chrome.action.setBadgeText({ text: '' });
+    api.browserAction.setBadgeText({ text: '' });
   }
 }
 
-// Poll badge every 30s when swarming is enabled
 setInterval(updateBadge, 30000);
 
-// Update badge when swarm setting changes
-chrome.storage.onChanged.addListener((changes) => {
+api.storage.onChanged.addListener((changes) => {
   if (changes.swarm_enabled) updateBadge();
 });

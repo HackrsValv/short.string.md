@@ -1,5 +1,6 @@
-// Popup script — UI logic, communicates with service worker
+// Popup script — UI logic, communicates with background page
 
+const api = typeof browser !== 'undefined' ? browser : chrome;
 const $ = (id) => document.getElementById(id);
 
 const urlInput = $('url-input');
@@ -57,17 +58,18 @@ urlInput.addEventListener('input', () => {
 });
 
 // Pre-fill from active tab
-chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-  if (tabs[0]?.url && !tabs[0].url.startsWith('chrome')) {
+api.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  if (tabs[0]?.url && !tabs[0].url.startsWith('chrome') && !tabs[0].url.startsWith('about:') && !tabs[0].url.startsWith('moz-extension')) {
     urlInput.value = tabs[0].url;
     shortenBtn.disabled = false;
   }
 });
 
 // Check for pending result from context menu
-chrome.storage.session.get('pendingResult', ({ pendingResult }) => {
+api.storage.local.get('pendingResult', (data) => {
+  const pendingResult = data.pendingResult;
   if (pendingResult) {
-    chrome.storage.session.remove('pendingResult');
+    api.storage.local.remove('pendingResult');
     if (pendingResult.result) {
       showResult(pendingResult.result, pendingResult.mode);
       urlInput.value = pendingResult.url;
@@ -90,7 +92,7 @@ shortenBtn.addEventListener('click', async () => {
   resultEl.classList.remove('visible');
 
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await api.runtime.sendMessage({
       _fromPopup: true,
       type: 'shorten',
       url,
@@ -144,7 +146,7 @@ resultUrl.addEventListener('click', () => {
 // ── Swarm toggle ──
 
 async function loadSwarmState() {
-  const { swarm_enabled = false } = await chrome.storage.local.get('swarm_enabled');
+  const { swarm_enabled = false } = await api.storage.local.get('swarm_enabled');
   swarmToggle.checked = swarm_enabled;
   updateSwarmUI(swarm_enabled);
 }
@@ -153,7 +155,7 @@ function updateSwarmUI(enabled) {
   if (enabled) {
     swarmIndicator.textContent = 'swarm on';
     swarmIndicator.classList.add('active');
-    chrome.runtime.sendMessage({ _fromPopup: true, type: 'swarm-status' }, (status) => {
+    api.runtime.sendMessage({ _fromPopup: true, type: 'swarm-status' }, (status) => {
       if (status && typeof status.peers === 'number') {
         swarmPeers.textContent = status.peers + ' peer' + (status.peers !== 1 ? 's' : '') + ' connected';
       }
@@ -167,16 +169,16 @@ function updateSwarmUI(enabled) {
 
 swarmToggle.addEventListener('change', async () => {
   if (swarmToggle.checked) {
-    const { swarm_consent_shown = false } = await chrome.storage.local.get('swarm_consent_shown');
+    const { swarm_consent_shown = false } = await api.storage.local.get('swarm_consent_shown');
     if (!swarm_consent_shown) {
       swarmToggle.checked = false;
       consentOverlay.classList.add('visible');
       return;
     }
-    await chrome.storage.local.set({ swarm_enabled: true });
+    await api.storage.local.set({ swarm_enabled: true });
     updateSwarmUI(true);
   } else {
-    await chrome.storage.local.set({ swarm_enabled: false });
+    await api.storage.local.set({ swarm_enabled: false });
     updateSwarmUI(false);
   }
 });
@@ -187,7 +189,7 @@ consentCancel.addEventListener('click', () => {
 
 consentEnable.addEventListener('click', async () => {
   consentOverlay.classList.remove('visible');
-  await chrome.storage.local.set({ swarm_consent_shown: true, swarm_enabled: true });
+  await api.storage.local.set({ swarm_consent_shown: true, swarm_enabled: true });
   swarmToggle.checked = true;
   updateSwarmUI(true);
 });
@@ -195,7 +197,7 @@ consentEnable.addEventListener('click', async () => {
 // ── History ──
 
 async function loadHistory() {
-  const { history = [] } = await chrome.storage.local.get('history');
+  const { history = [] } = await api.storage.local.get('history');
 
   while (historyList.firstChild) historyList.removeChild(historyList.firstChild);
 

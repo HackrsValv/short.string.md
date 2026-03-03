@@ -1,16 +1,15 @@
 {
-  "manifest_version": 3,
+  "manifest_version": 2,
   "name": "short.string.md",
   "version": "0.1.0",
   "description": "Shorten URLs with short.string.md — compression + Nostr aliases, optional P2P swarming",
   "permissions": [
     "storage",
     "contextMenus",
-    "offscreen",
     "activeTab",
     "clipboardWrite"
   ],
-  "action": {
+  "browser_action": {
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",
@@ -19,10 +18,11 @@
     }
   },
   "background": {
-    "service_worker": "background.js"
+    "page": "background.html",
+    "persistent": true
   },
   "commands": {
-    "_execute_action": {
+    "_execute_browser_action": {
       "suggested_key": {
         "default": "Ctrl+Shift+S",
         "mac": "Command+Shift+S"
@@ -34,5 +34,11 @@
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "shortener@short.string.md",
+      "strict_min_version": "109.0"
+    }
   }
 }
