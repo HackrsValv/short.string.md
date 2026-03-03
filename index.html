@@ -287,7 +287,9 @@
   <div id="toast"></div>
 
   <!-- Compression Engine -->
-  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"
+          integrity="sha384-qP+CaOU5KuGGbUItppvizJmgFgg1jQxVvE9GU5tnOb8heJ8ZlIuwsXGm1i7k4xb4"
+          crossorigin="anonymous"></script>
   <script>
 // ── Domain Dictionary ──
 const DOMAIN_TO_CODE = {
@@ -360,6 +362,9 @@ function decompressURL(compressed) {
   try { raw = LZString.decompressFromEncodedURIComponent(compressed); } catch { return null; }
   if (!raw) return null;
 
+  // T1.3: Cap decompressed output to prevent decompression bombs
+  if (raw.length > 8192) return null;
+
   const prefix = raw[0]; // S or H
   if (prefix !== 'S' && prefix !== 'H') return null;
 
@@ -371,7 +376,15 @@ function decompressURL(compressed) {
   const rest = raw.slice(tabIdx + 1);
 
   const host = CODE_TO_DOMAIN[domainPart] || domainPart;
-  return protocol + host + rest;
+  const url = protocol + host + rest;
+
+  // T1.1: Validate URL scheme — only allow http/https
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+  } catch { return null; }
+
+  return url;
 }
 
 window.compressURL = compressURL;
@@ -574,7 +587,7 @@ window._initReady = init();
 </script>
 <script type="module">
 // ── Nostr Alias Publishing & Resolution ──
-import { generateSecretKey, getPublicKey, finalizeEvent } from 'https://esm.run/nostr-tools@2';
+import { generateSecretKey, getPublicKey, finalizeEvent, verifyEvent } from 'https://esm.run/nostr-tools@2';
 import { joinRoom } from 'https://esm.run/trystero@0.22.0';
 
 // ── Constants ──
@@ -707,6 +720,10 @@ function queryRelays(alias) {
           try {
             const data = JSON.parse(msg.data);
             if (data[0] === 'EVENT' && data[2] && data[2].content && !resolved) {
+              // T2.2/T2.5: Verify event signature before trusting relay response
+              try {
+                if (!verifyEvent(data[2])) break;
+              } catch { break; }
               resolved = true;
               clearTimeout(timer);
               sockets.forEach(s => { try { s.close(); } catch {} });

@@ -22,7 +22,7 @@ Companion Tamarin model formally verifies the Nostr alias protocol's cryptograph
 - Attacker crafts a `#c/` payload that decompresses to a `javascript:`, `data:`, or `blob:` URI
 - **Impact:** XSS execution in the user's browser when visiting the link
 - **Mitigation:** After decompression, validate the result is `http:` or `https:` only — reject all other schemes
-- **Status:** NOT currently implemented — the decompressed URL is used directly
+- **Status:** MITIGATED — `decompressURL()` validates scheme via `new URL()` and rejects non-http/https
 
 #### T1.2 — Domain Dictionary Confusion
 - Attacker relies on domain code ambiguity (e.g. a future code collision) to redirect to an unintended host
@@ -34,7 +34,7 @@ Companion Tamarin model formally verifies the Nostr alias protocol's cryptograph
 - Payload that decompresses to an extremely large string, causing memory exhaustion
 - **Impact:** DoS of the user's browser tab
 - **Mitigation:** Cap decompressed output length (e.g. 8KB — no legitimate URL exceeds this)
-- **Status:** NOT currently implemented
+- **Status:** MITIGATED — `decompressURL()` rejects output > 8192 chars
 
 ### 2. Nostr Alias Threats
 
@@ -50,7 +50,7 @@ Companion Tamarin model formally verifies the Nostr alias protocol's cryptograph
 - **Mitigation:** Verify event signature against the pubkey that originally created the alias.
   Query multiple relays and require consensus (e.g. 2-of-3 agreement).
   Cache the first valid mapping and reject conflicting ones.
-- **Status:** NOT currently implemented — the first relay response is trusted without signature verification
+- **Status:** MITIGATED — `queryRelays()` calls `verifyEvent()` on received events in both site and extension
 
 #### T2.3 — Replay Attack
 - Attacker replays an old, legitimate event with a different alias-to-URL mapping after the original author updated it
@@ -75,7 +75,7 @@ Companion Tamarin model formally verifies the Nostr alias protocol's cryptograph
 - **Mitigation:** Schnorr signature verification — `finalizeEvent` signs with the real secret key, and the pubkey is derived from it.
   Relays that validate signatures will reject forged events.
   Clients must also verify signatures on received events.
-- **Status:** Event creation is safe (nostr-tools handles signing), but client-side signature verification on received events is NOT implemented
+- **Status:** MITIGATED — event creation uses nostr-tools signing; received events verified via `verifyEvent()`
 
 ### 3. P2P Swarming Threats (WebRTC)
 
@@ -160,7 +160,7 @@ Companion Tamarin model formally verifies the Nostr alias protocol's cryptograph
 - **Impact:** Same as T5.1
 - **Mitigation:** Add Subresource Integrity (SRI) hash to the `<script>` tag.
   The extension already bundles lz-string locally, so only the web app is affected.
-- **Status:** No SRI hash on the CDN script tag
+- **Status:** MITIGATED — SRI hash (sha384) added to lz-string script tag
 
 ## Design
 
@@ -262,10 +262,10 @@ Legend: **S**poofing, **T**ampering, **R**epudiation, **I**nformation disclosure
 
 ## Future
 
-{[!] Implement URL scheme validation after decompression (T1.1)}
-{[!] Add Nostr event signature verification on received events (T2.2, T2.5)}
-{[!] Add SRI hash to CDN script tag in index.html (T5.2)}
-{[!] Cap decompressed output length (T1.3)}
+{[x] Implement URL scheme validation after decompression (T1.1)}
+{[x] Add Nostr event signature verification on received events (T2.2, T2.5)}
+{[x] Add SRI hash to CDN script tag in index.html (T5.2)}
+{[x] Cap decompressed output length (T1.3)}
 {[?] Encrypt secret keys at rest with user passphrase (T2.4)}
 {[?] Require signed Nostr events in P2P responses (T3.1)}
 {[?] Update consent dialog to mention IP exposure via WebRTC (T3.4)}
