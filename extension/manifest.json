@@ -35,6 +35,7 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
+  "content_security_policy": "script-src 'self'; object-src 'self'; frame-src https://short.string.md",
   "browser_specific_settings": {
     "gecko": {
       "id": "shortener@short.string.md",
