@@ -1,65 +1,7 @@
-// Background page — manages iframe bridge, context menu, message routing, badge
-// Firefox/Zen: persistent background page with DOM access (no offscreen API needed)
+// Background page — context menu, message routing, badge
+// All shortening logic is in shorten.js (loaded before this script)
 
 const api = typeof browser !== 'undefined' ? browser : chrome;
-
-// ── Iframe bridge (same logic as former offscreen.js) ──
-
-const iframe = document.getElementById('site');
-const SITE_ORIGIN = 'https://short.string.md';
-let messageId = 0;
-const pending = {};
-
-let iframeReady = false;
-const readyPromise = new Promise((resolve) => {
-  iframe.addEventListener('load', () => {
-    iframeReady = true;
-    resolve();
-  });
-  setTimeout(() => {
-    if (!iframeReady) resolve();
-  }, 10000);
-});
-
-window.addEventListener('message', (event) => {
-  if (event.source !== iframe.contentWindow) return;
-  const data = event.data;
-  if (!data || !data._extReply) return;
-
-  const id = data._id;
-  if (id != null && pending[id]) {
-    pending[id](data);
-    delete pending[id];
-  }
-});
-
-async function sendToSite(msg) {
-  await readyPromise;
-
-  if (!iframeReady) {
-    return { error: 'Site iframe failed to load' };
-  }
-
-  const id = ++messageId;
-  const timeout = msg.type === 'shorten' && msg.mode === 'alias' ? 15000 : 8000;
-
-  const promise = new Promise((resolve) => {
-    pending[id] = resolve;
-    setTimeout(() => {
-      if (pending[id]) {
-        delete pending[id];
-        resolve({ error: 'Timeout waiting for site response' });
-      }
-    }, timeout);
-  });
-
-  iframe.contentWindow.postMessage(
-    { ...msg, _ext: true, _id: id },
-    SITE_ORIGIN
-  );
-
-  return promise;
-}
 
 // ── Context menu ──
 
@@ -77,9 +19,8 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   const url = info.linkUrl || info.pageUrl;
   if (!url) return;
 
-  const result = await sendToSite({ type: 'shorten', url, mode: 'compress' });
+  const result = await shortenURL(url, 'compress');
 
-  // Store result for popup to pick up
   await api.storage.local.set({
     pendingResult: {
       url,
@@ -91,35 +32,38 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
   });
 });
 
-// ── Message routing (popup → site iframe) ──
+// ── Message routing (popup → shortenURL) ──
 
 api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg._fromPopup) return;
 
+  if (msg.type === 'swarm-status') {
+    sendResponse({ peers: 0 });
+    return;
+  }
+
   (async () => {
-    const result = await sendToSite({
-      type: msg.type,
-      url: msg.url,
-      mode: msg.mode,
-      alias: msg.alias,
-      hash: msg.hash,
-    });
+    try {
+      const result = await shortenURL(msg.url, msg.mode, msg.alias);
 
-    // Save to history if successful shorten
-    if (msg.type === 'shorten' && result.result && !result.error) {
-      const data = await api.storage.local.get('history');
-      const history = data.history || [];
-      history.unshift({
-        url: msg.url,
-        short: result.result,
-        mode: msg.mode || 'compress',
-        created: Date.now(),
-      });
-      if (history.length > 500) history.length = 500;
-      await api.storage.local.set({ history });
+      // Save to history if successful shorten
+      if (msg.type === 'shorten' && result.result && !result.error) {
+        const data = await api.storage.local.get('history');
+        const history = data.history || [];
+        history.unshift({
+          url: msg.url,
+          short: result.result,
+          mode: msg.mode || 'compress',
+          created: Date.now(),
+        });
+        if (history.length > 500) history.length = 500;
+        await api.storage.local.set({ history });
+      }
+
+      sendResponse(result);
+    } catch (err) {
+      sendResponse({ error: err.message || 'Unknown error' });
     }
-
-    sendResponse(result);
   })();
 
   return true;
@@ -136,18 +80,10 @@ async function updateBadge() {
     return;
   }
 
-  try {
-    const status = await sendToSite({ type: 'swarm-status' });
-    if (status && typeof status.peers === 'number') {
-      api.browserAction.setBadgeText({ text: status.peers > 0 ? String(status.peers) : '' });
-      api.browserAction.setBadgeBackgroundColor({ color: status.peers > 0 ? '#3fb950' : '#8b949e' });
-    }
-  } catch {
-    api.browserAction.setBadgeText({ text: '' });
-  }
+  // Swarming is a future feature — for now just show the toggle state
+  api.browserAction.setBadgeText({ text: 'P2P' });
+  api.browserAction.setBadgeBackgroundColor({ color: '#3fb950' });
 }
-
-setInterval(updateBadge, 30000);
 
 api.storage.onChanged.addListener((changes) => {
   if (changes.swarm_enabled) updateBadge();
