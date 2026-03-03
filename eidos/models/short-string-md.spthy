@@ -1,0 +1,259 @@
+/*
+ * short.string.md — Nostr Alias Protocol
+ * Tamarin Prover Model
+ *
+ * Models the NIP-78 alias creation and resolution protocol
+ * with untrusted relays and P2P peers.
+ *
+ * Trust assumptions:
+ *   - Relays are UNTRUSTED (can lie, drop, replay)
+ *   - Peers are UNTRUSTED (can send forged responses)
+ *   - Only the user's secret key is trusted
+ *
+ * Properties verified:
+ *   1. Alias ownership — only the key holder can create/update
+ *   2. No forgery — valid event requires correct secret key
+ *   3. Freshness — newer events supersede older ones
+ *   4. Resolution integrity — client accepts only signed events
+ */
+
+theory ShortStringMd
+begin
+
+builtins: signing, hashing
+
+/* ============================================================
+ * Key Generation
+ * ============================================================
+ * Models: getOrCreateSecretKey() / generateSecretKey()
+ * The secret key is generated once and stored.
+ * The public key is derived deterministically.
+ */
+
+rule Generate_Keypair:
+    [ Fr(~sk) ]
+  -->
+    [ !SecretKey($User, ~sk)
+    , !PublicKey($User, pk(~sk))
+    , Out(pk(~sk))  // public key is public knowledge
+    ]
+
+/* ============================================================
+ * Alias Creation (NIP-78 Event Publishing)
+ * ============================================================
+ * Models: createNostrAlias(alias, targetURL)
+ *
+ * The user signs an event containing:
+ *   - kind: 30078
+ *   - d-tag: alias name
+ *   - t-tag: 'short.string.md'
+ *   - content: target URL
+ *   - created_at: timestamp
+ *
+ * The event is signed with the user's secret key.
+ */
+
+rule Create_Alias:
+    let
+        event = <'NIP78', $alias, url, ~ts>
+        sig = sign(event, sk)
+        signed_event = <event, sig, pk(sk)>
+    in
+    [ !SecretKey($User, sk)
+    , Fr(~ts)       // fresh timestamp
+    , Fr(url)       // the target URL (arbitrary)
+    ]
+  --[ AliasCreated($User, $alias, url, ~ts)
+    , Honest($User)
+    ]->
+    [ Out(signed_event)
+    , AliasState($User, $alias, url, ~ts)
+    ]
+
+/* ============================================================
+ * Alias Update (Replaceable Event)
+ * ============================================================
+ * Models: updating an alias to point to a new URL.
+ * NIP-78 replaceable events: same d-tag, newer created_at.
+ */
+
+rule Update_Alias:
+    let
+        event = <'NIP78', $alias, new_url, ~new_ts>
+        sig = sign(event, sk)
+        signed_event = <event, sig, pk(sk)>
+    in
+    [ !SecretKey($User, sk)
+    , AliasState($User, $alias, old_url, old_ts)
+    , Fr(~new_ts)
+    , Fr(new_url)
+    ]
+  --[ AliasUpdated($User, $alias, new_url, ~new_ts)
+    , Honest($User)
+    ]->
+    [ Out(signed_event)
+    , AliasState($User, $alias, new_url, ~new_ts)
+    ]
+
+/* ============================================================
+ * Untrusted Relay
+ * ============================================================
+ * The relay can:
+ *   - Forward legitimate signed events (honest behaviour)
+ *   - Drop events (modelled by not having a rule)
+ *   - Replay old events (modelled by Out keeping old events)
+ *   - Forge events (modelled by the adversary's capabilities)
+ *
+ * The relay does NOT have access to any secret keys.
+ * It can only forward or withhold messages from Out.
+ */
+
+// Relay forwards a signed event to a querying client
+// (This is implicit in Tamarin — Out facts are available to the adversary,
+//  who models the network including relays)
+
+/* ============================================================
+ * Alias Resolution (Client-Side)
+ * ============================================================
+ * Models: queryRelays(alias) with signature verification
+ *
+ * The client receives a signed event and verifies:
+ *   1. The signature is valid for the claimed pubkey
+ *   2. The event matches the queried alias
+ *
+ * This models the MITIGATED protocol (T2.2/T2.5 implemented).
+ */
+
+rule Resolve_Alias_Verified:
+    let
+        event = <'NIP78', $alias, url, ts>
+        signed_event = <event, sig, pubkey>
+    in
+    [ In(signed_event) ]
+  --[ AliasResolved($alias, url, pubkey, ts)
+    , Eq(verify(sig, event, pubkey), true)
+    ]->
+    [ ResolvedAlias($alias, url, pubkey, ts) ]
+
+/* Restriction: signature must verify */
+restriction Equality:
+    "All x y #i. Eq(x, y) @ i ==> x = y"
+
+/* ============================================================
+ * Alias Resolution WITHOUT Verification (Current Implementation)
+ * ============================================================
+ * Models the UNMITIGATED protocol where the client trusts
+ * any response without checking signatures.
+ * Used to demonstrate the attack (T2.2).
+ */
+
+rule Resolve_Alias_Unverified:
+    [ In(<'NIP78', $alias, url, ts>) ]
+  --[ AliasResolvedUnverified($alias, url, ts)
+    ]->
+    [ ResolvedAliasUnsafe($alias, url, ts) ]
+
+/* ============================================================
+ * P2P Peer Response
+ * ============================================================
+ * Models: peer responding to alias query over WebRTC
+ *
+ * Verified variant: peer sends a signed event (T3.1 mitigated)
+ * Unverified variant: peer sends bare URL (current implementation)
+ */
+
+rule Peer_Response_Signed:
+    let
+        event = <'NIP78', $alias, url, ts>
+        signed_event = <event, sig, pubkey>
+    in
+    [ In(signed_event) ]
+  --[ PeerResponseVerified($alias, url, pubkey)
+    , Eq(verify(sig, event, pubkey), true)
+    ]->
+    [ ResolvedAlias($alias, url, pubkey, ts) ]
+
+rule Peer_Response_Bare:
+    [ In(<$alias, url>) ]
+  --[ PeerResponseBare($alias, url)
+    ]->
+    [ ResolvedAliasUnsafe($alias, url, 'no_ts') ]
+
+/* ============================================================
+ * Security Properties (Lemmas)
+ * ============================================================ */
+
+/* --- Property 1: Alias Ownership ---
+ * If a verified resolution yields (alias, url, pubkey),
+ * then someone with secret key sk where pk(sk) = pubkey
+ * must have created that alias-url binding.
+ */
+
+lemma alias_ownership:
+    "All alias url pubkey ts #i.
+        AliasResolved(alias, url, pubkey, ts) @ i
+        ==>
+        (Ex user sk #j.
+            AliasCreated(user, alias, url, ts) @ j
+            & pk(sk) = pubkey
+            & j < i)
+        | (Ex user sk new_ts #j.
+            AliasUpdated(user, alias, url, ts) @ j
+            & pk(sk) = pubkey
+            & j < i)
+    "
+
+/* --- Property 2: No Forgery ---
+ * The adversary cannot produce a valid signed event
+ * for an alias without the corresponding secret key.
+ * (This follows from the signing primitive, but we verify explicitly.)
+ */
+
+lemma no_forgery:
+    "All alias url pubkey ts #i.
+        AliasResolved(alias, url, pubkey, ts) @ i
+        ==>
+        (Ex user #j. Honest(user) & AliasCreated(user, alias, url, ts) @ j & j < i)
+        | (Ex user #j. Honest(user) & AliasUpdated(user, alias, url, ts) @ j & j < i)
+        | (Ex sk #j. !SecretKey($Compromised, sk) @ j & pk(sk) = pubkey
+            & (Ex #k. K(sk) @ k))
+    "
+
+/* --- Property 3: Unverified Resolution is Unsafe ---
+ * Show that WITHOUT signature verification, the adversary CAN
+ * make the client accept a forged alias mapping.
+ * This is an ATTACK lemma — we expect it to be FALSIFIED (trace found).
+ */
+
+lemma unverified_is_unsafe:
+    exists-trace
+    "Ex alias url ts #i.
+        AliasResolvedUnverified(alias, url, ts) @ i
+        & not (Ex user #j. AliasCreated(user, alias, url, ts) @ j)
+        & not (Ex user #j. AliasUpdated(user, alias, url, ts) @ j)
+    "
+
+/* --- Property 4: P2P Bare Response is Unsafe ---
+ * Show that bare (unsigned) P2P responses allow forgery.
+ */
+
+lemma bare_peer_response_unsafe:
+    exists-trace
+    "Ex alias url #i.
+        PeerResponseBare(alias, url) @ i
+        & not (Ex user url2 ts #j. AliasCreated(user, alias, url, ts) @ j)
+    "
+
+/* --- Property 5: Verified P2P is Safe ---
+ * Signed P2P responses provide the same guarantees as relay responses.
+ */
+
+lemma verified_peer_safe:
+    "All alias url pubkey #i.
+        PeerResponseVerified(alias, url, pubkey) @ i
+        ==>
+        (Ex user ts #j. AliasCreated(user, alias, url, ts) @ j & j < i)
+        | (Ex user ts #j. AliasUpdated(user, alias, url, ts) @ j & j < i)
+    "
+
+end
