@@ -119,7 +119,13 @@ chrome.storage.local = {
 
 ## Mapping
 
-> [[index.html]] — site code loaded by the offscreen document
+> [[index.html]] — site code loaded by the offscreen document, postMessage API
+> [[extension/manifest.json]] — MV3 manifest with permissions and keyboard shortcut
+> [[extension/background.js]] — service worker: offscreen lifecycle, context menu, message routing, badge
+> [[extension/offscreen.html]] — loads short.string.md in iframe
+> [[extension/offscreen.js]] — bridges chrome.runtime messages ↔ iframe postMessage
+> [[extension/popup.html]] — popup UI with dark theme
+> [[extension/popup.js]] — popup logic: shortening, history, swarm toggle
 
 ## Future
 
