@@ -106,17 +106,20 @@ The user-facing interface — matching the site's dark GitHub theme.
    - History entries: { url, short, mode, created }
    - => History managed in service worker, displayed in popup (shows top 50)
 
-### Phase 5 - Cross-browser build - status: open
+### Phase 5 - Firefox/Zen native - status: done
 
-Produce Firefox/Zen variant from the same codebase.
+Converted extension to Zen/Firefox-native rather than maintaining two builds.
 
-1. [ ] Create build script
-   - Copy extension/ to build/chrome/ and build/firefox/
-   - Chrome: manifest v3 as-is (offscreen API)
-   - Firefox: modify manifest for browser_specific_settings, replace offscreen with background page + iframe approach
-   - Simple shell script or node script
-2. [ ] Test Firefox variant
-   - Load in Firefox/Zen as temporary add-on
+1. [x] Convert to MV2 with background page
+   - => Switched from Chrome MV3 + offscreen API to MV2 persistent background page
+   - => background.html contains the iframe directly (Firefox bg pages have DOM access)
+   - => Merged service worker + offscreen logic into single background.js
+   - => Added browser_specific_settings with gecko ID
+   - => browser/chrome API compat shim (`const api = typeof browser !== 'undefined' ? browser : chrome`)
+   - => Replaced storage.session with storage.local (MV2 compat)
+   - => Removed offscreen.html/offscreen.js (Chrome-only)
+2. [ ] Test in Zen
+   - Load as temporary add-on in Zen
    - Verify shortening and swarming work
 
 ## Verification
@@ -131,10 +134,12 @@ Produce Firefox/Zen variant from the same codebase.
 
 ## Adjustments
 
-- 2603030735: Phases 1-4 implemented together in a single pass rather than sequential phases. The implementations were cohesive enough to build as a unit. Phase 5 (cross-browser) remains separate.
+- 2603030735: Phases 1-4 implemented together in a single pass rather than sequential phases. The implementations were cohesive enough to build as a unit.
+- 2603030735: Phase 5 pivoted from "cross-browser build" to "Zen-native". User is on Zen, so converted directly to MV2 background page instead of maintaining Chrome + Firefox builds.
 
 ## Progress Log
 
 - 2603030735: Phase 1 — Added postMessage API to index.html (commit a754e18)
 - 2603030735: Phases 2-4 — Created full extension scaffold with service worker, offscreen doc, and popup UI (commit ffd96e5)
-- Next: Phase 5 (cross-browser build) or manual testing of Phases 1-4
+- 2603030735: Phase 5 — Converted to Firefox/Zen MV2 with background page (commit e80bef6)
+- Next: Test in Zen browser
