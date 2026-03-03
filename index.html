@@ -1031,6 +1031,81 @@ if (location.hash.startsWith('#n/')) {
   document.getElementById('resolve-view').style.display = '';
   window.resolveAlias(alias);
 }
+
+// ── Extension postMessage API ──
+window.addEventListener('message', async (event) => {
+  const data = event.data;
+  if (!data || !data.type || !data._ext) return;
+
+  const reply = (response) => {
+    event.source.postMessage({ ...response, _extReply: true, _id: data._id }, event.origin === 'null' ? '*' : event.origin);
+  };
+
+  if (data.type === 'shorten') {
+    try {
+      if (data.mode === 'alias') {
+        const alias = data.alias || genShortCode();
+        const existing = await queryRelays(alias);
+        if (existing) {
+          reply({ type: 'shortened', error: 'Alias "' + alias + '" is already taken.' });
+          return;
+        }
+        const count = await createNostrAlias(alias, data.url);
+        if (typeof window._broadcastMapping === 'function') {
+          window._broadcastMapping(alias, data.url);
+        }
+        reply({ type: 'shortened', result: location.origin + '/#n/' + alias, alias, relays: count });
+      } else {
+        const compressed = compressURL(data.url);
+        if (!compressed) {
+          reply({ type: 'shortened', error: 'Could not compress URL' });
+          return;
+        }
+        reply({ type: 'shortened', result: location.origin + '/#c/' + compressed });
+      }
+    } catch (err) {
+      reply({ type: 'shortened', error: err.message });
+    }
+  } else if (data.type === 'resolve') {
+    try {
+      const hash = data.hash;
+      if (hash.startsWith('c/')) {
+        const url = decompressURL(hash.slice(2));
+        reply({ type: 'resolved', url: url || null, error: url ? null : 'Failed to decompress' });
+      } else if (hash.startsWith('n/')) {
+        const alias = hash.slice(2);
+        const cached = lookupCache(alias);
+        if (cached) {
+          reply({ type: 'resolved', url: cached, source: 'cache' });
+          return;
+        }
+        const p2p = await window._resolveP2P?.(alias);
+        if (p2p) {
+          cacheAlias(alias, p2p);
+          reply({ type: 'resolved', url: p2p, source: 'p2p' });
+          return;
+        }
+        const relayed = await queryRelays(alias);
+        if (relayed) {
+          cacheAlias(alias, relayed);
+          reply({ type: 'resolved', url: relayed, source: 'relay' });
+          return;
+        }
+        reply({ type: 'resolved', url: null, error: 'Alias not found' });
+      } else {
+        reply({ type: 'resolved', url: null, error: 'Unknown hash format' });
+      }
+    } catch (err) {
+      reply({ type: 'resolved', url: null, error: err.message });
+    }
+  } else if (data.type === 'swarm-status') {
+    reply({
+      type: 'swarm-status',
+      peers: p2pPeers ? p2pPeers.size : 0,
+      connected: !!p2pRoom,
+    });
+  }
+});
 </script>
 </body>
 </html>
